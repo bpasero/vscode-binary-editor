@@ -12,10 +12,17 @@ export function activate(context: vscode.ExtensionContext) {
 export class CustomBinaryEditorProvider implements vscode.CustomEditorProvider {
 
 	private mapDocumentToEditor: Map<vscode.CustomDocument, CustomBinaryEditor> = new Map();
+	private mapDocumentToEditingCapabilities: Map<vscode.CustomDocument, CustomBinaryEditingCapabilities> = new Map();
 
 	async resolveCustomDocument(document: vscode.CustomDocument): Promise<vscode.CustomEditorCapabilities> {
+		let capabilities = this.mapDocumentToEditingCapabilities.get(document);
+		if (!capabilities) {
+			capabilities = new CustomBinaryEditingCapabilities(document);
+			this.mapDocumentToEditingCapabilities.set(document, capabilities);
+		}
+
 		return {
-			editing: new CustomBinaryEditingCapabilities(document)
+			editing: capabilities
 		};
 	}
 
