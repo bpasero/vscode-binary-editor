@@ -32,6 +32,8 @@ export class CustomBinaryEditorProvider implements vscode.CustomEditorProvider {
 			editor = new CustomBinaryEditor(document, panel);
 			this.mapDocumentToEditor.set(document, editor);
 
+			this.mapDocumentToEditingCapabilities.get(document)?.connect(panel);
+
 			panel.onDidDispose(() => {
 				editor?.dispose();
 				this.mapDocumentToEditor.delete(document);
@@ -40,29 +42,86 @@ export class CustomBinaryEditorProvider implements vscode.CustomEditorProvider {
 	}
 }
 
-export class CustomBinaryEditingCapabilities implements vscode.CustomEditorEditingCapability<object> {
+interface IMarkdownEdit {
+	versionId: number;
+	prevVersionId: number;
+}
 
-	constructor(private document: vscode.CustomDocument) { }
+export class CustomBinaryEditingCapabilities implements vscode.CustomEditorEditingCapability<IMarkdownEdit> {
 
-	save(): Thenable<void> {
-		throw new Error("Method not implemented.");
+	private panel: vscode.WebviewPanel | undefined = undefined;
+	private contents: string | undefined = undefined;
+
+	private mapVersionIdToContent = new Map<number, string>();
+	private versionId = 0;
+
+	constructor(private document: vscode.CustomDocument) {
+		this.contents = fs.readFileSync(document.uri.fsPath).toString();
+		this.mapVersionIdToContent.set(this.versionId, this.contents);
 	}
 
-	saveAs(targetResource: vscode.Uri): Thenable<void> {
-		throw new Error("Method not implemented.");
+	connect(panel: vscode.WebviewPanel): void {
+		this.panel = panel;
+
+		panel.webview.onDidReceiveMessage(e => {
+			switch (e.type) {
+				case 'webview->exthost:changeContent':
+					if (this.contents !== e.payload) {
+						this.versionId++;
+						this.mapVersionIdToContent.set(this.versionId, e.payload);
+
+						this._onDidEdit.fire({ versionId: this.versionId, prevVersionId: this.versionId - 1 });
+						this.contents = e.payload;
+					}
+					break;
+			}
+		});
 	}
 
-	onDidEdit: vscode.Event<object> = new vscode.EventEmitter<object>().event;
-
-	applyEdits(edits: readonly object[]): Thenable<void> {
-		throw new Error("Method not implemented.");
+	async save(): Promise<void> {
+		if (this.contents) {
+			fs.writeFileSync(this.document.uri.fsPath, this.contents);
+		}
 	}
 
-	undoEdits(edits: readonly object[]): Thenable<void> {
-		throw new Error("Method not implemented.");
+	async saveAs(targetResource: vscode.Uri): Promise<void> {
+		if (this.contents) {
+			fs.writeFileSync(targetResource.fsPath, this.contents);
+		}
 	}
 
-	backup(cancellation: vscode.CancellationToken): Thenable<boolean> {
+	private _onDidEdit: vscode.EventEmitter<IMarkdownEdit> = new vscode.EventEmitter<IMarkdownEdit>();
+	onDidEdit: vscode.Event<IMarkdownEdit> = this._onDidEdit.event;
+
+	async applyEdits(edits: readonly IMarkdownEdit[]): Promise<void> {
+		if (!this.panel) {
+			return;
+		}
+
+		for (const edit of edits) {
+			this.contents = this.mapVersionIdToContent.get(edit.versionId);
+
+			this.panel.webview.postMessage({
+				type: 'exhost->webview:acceptContent',
+				payload: this.mapVersionIdToContent.get(edit.versionId)
+			});
+		}
+	}
+
+	async undoEdits(edits: readonly IMarkdownEdit[]): Promise<void> {
+		if (!this.panel) {
+			return;
+		}
+
+		for (const edit of edits) {
+			this.panel.webview.postMessage({
+				type: 'exhost->webview:acceptContent',
+				payload: this.mapVersionIdToContent.get(edit.prevVersionId)
+			});
+		}
+	}
+
+	async backup(cancellation: vscode.CancellationToken): Promise<boolean> {
 		throw new Error("Method not implemented.");
 	}
 }
@@ -77,10 +136,10 @@ export class CustomBinaryEditor {
 		panel.webview.onDidReceiveMessage(e => {
 			switch (e.type) {
 				case 'webview->exthost:ready':
-					// this.whenEditorReady(document, panel);
-					break;
-				case 'webview->exthost:changeContent':
-					// this.changeContent(e.payload);
+					panel.webview.postMessage({
+						type: 'exhost->webview:init',
+						payload: fs.readFileSync(document.uri.fsPath).toString()
+					});
 					break;
 			}
 		});
@@ -88,15 +147,23 @@ export class CustomBinaryEditor {
 		panel.webview.html = this.getEditorHtml(panel);
 	}
 
-
 	private getEditorHtml(panel: vscode.WebviewPanel): string {
 		return `
 		<html>
 			<head>
-				<script src="${panel.webview.asWebviewUri(vscode.Uri.file(path.resolve(__dirname, '..', 'static', 'editor.js')))}"></script>
-			</head>
+				
+			<!-- Styles -->
+				<link rel="stylesheet" href="https://uicdn.toast.com/tui-editor/latest/tui-editor.css"></link>
+				<link rel="stylesheet" href="https://uicdn.toast.com/tui-editor/latest/tui-editor-contents.css"></link>
+				<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.48.4/codemirror.css"></link>
+				<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/styles/github.min.css"></link>
+				
+				<!-- Scripts -->
+				<script src="https://uicdn.toast.com/tui-editor/latest/tui-editor-Editor-full.js"></script>
+			</head>	
 			<body>
-				Hello Binary Editor
+				<div id="editorSection"></div>
+				<script src="${panel.webview.asWebviewUri(vscode.Uri.file(path.resolve(__dirname, '..', 'static', 'editor.js')))}"></script>
 			</body>
 		</html>`;
 	}

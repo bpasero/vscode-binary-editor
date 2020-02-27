@@ -21,7 +21,7 @@
 				"viewType": "custom-binary-editor",
 				"selector": [
 					{
-						"filenamePattern": "*.binary"
+						"filenamePattern": "*.md"
 					}
 				],
 				"displayName": "Custom Binary Editor"
