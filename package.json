@@ -21,7 +21,7 @@
 				"viewType": "custom-binary-editor",
 				"selector": [
 					{
-						"filenamePattern": "*.abc"
+						"filenamePattern": "*.binary"
 					}
 				],
 				"displayName": "Custom Binary Editor"

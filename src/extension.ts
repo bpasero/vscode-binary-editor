@@ -88,6 +88,9 @@ export class CustomBinaryEditor {
 			<head>
 				<script src="${panel.webview.asWebviewUri(vscode.Uri.file(path.resolve(__dirname, '..', 'static', 'editor.js')))}"></script>
 			</head>
+			<body>
+				Hello Binary Editor
+			</body>
 		</html>`;
 	}
 
